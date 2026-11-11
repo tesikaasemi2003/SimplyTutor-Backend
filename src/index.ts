@@ -7,6 +7,7 @@ import cors from "cors"
 import mongoose from "mongoose"
 import authRouter from "./routes/auth.routes"
 import topicRouter from "./routes/topic.routes"
+import explanationRouter from "./routes/explanation.routes"
 
 const PORT = process.env.PORT || 5000
 const MONGO_URL = process.env.MONGO_URL || ""
@@ -22,6 +23,7 @@ app.get("/api/v1/health", (_req, res) => {
 
 app.use("/api/v1/auth", authRouter)
 app.use("/api/v1/topics", topicRouter)
+app.use("/api/v1/explanations", explanationRouter)
 
 mongoose
   .connect(MONGO_URL)
