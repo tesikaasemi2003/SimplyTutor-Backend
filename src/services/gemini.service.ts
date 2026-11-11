@@ -59,3 +59,92 @@ Respond with JSON only, in exactly this shape:
     suggestions: toStringArray(parsed.suggestions)
   }
 }
+
+export interface GeneratedQuestion {
+  type: "MCQ" | "SCENARIO"
+  question: string
+  options: string[]
+  correctIndex: number
+  explanation: string
+}
+
+export const generateQuiz = async (
+  topicTitle: string,
+  topicDescription: string,
+  count: number,
+  gaps: string[]
+): Promise<GeneratedQuestion[]> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash"
+
+  const gapsText = gaps.length
+    ? `The learner has these knowledge gaps. Focus most questions on them:\n- ${gaps.join("\n- ")}`
+    : "Cover the most important ideas of the topic."
+
+  const prompt = `You are a quiz writer for a micro-learning platform.
+Write ${count} multiple-choice questions about the topic below.
+Make roughly half of them short real-world scenario questions (type "SCENARIO")
+and the rest direct concept questions (type "MCQ").
+
+Topic: ${topicTitle}
+Topic description: ${topicDescription}
+${gapsText}
+
+Rules:
+- Each question has exactly 4 options and exactly one correct option.
+- "correctIndex" is the 0-based index of the correct option.
+- Spread the correct answers across different positions.
+- Keep wording simple and unambiguous.
+
+Respond with JSON only, in exactly this shape:
+{
+  "questions": [
+    {
+      "type": "MCQ",
+      "question": "...",
+      "options": ["...", "...", "...", "..."],
+      "correctIndex": 0,
+      "explanation": "<one sentence on why the answer is correct>"
+    }
+  ]
+}`
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: { responseMimeType: "application/json", temperature: 0.5 }
+  })
+
+  const parsed = JSON.parse(response.text ?? "{}")
+  const raw: unknown[] = Array.isArray(parsed.questions) ? parsed.questions : []
+
+  const valid: GeneratedQuestion[] = []
+  for (const item of raw) {
+    const q = item as Record<string, unknown>
+    const options = Array.isArray(q.options) ? q.options.map(String) : []
+    const correctIndex = Number(q.correctIndex)
+
+    if (
+      typeof q.question === "string" &&
+      q.question.trim() &&
+      options.length === 4 &&
+      Number.isInteger(correctIndex) &&
+      correctIndex >= 0 &&
+      correctIndex <= 3
+    ) {
+      valid.push({
+        type: q.type === "SCENARIO" ? "SCENARIO" : "MCQ",
+        question: q.question.trim(),
+        options,
+        correctIndex,
+        explanation: String(q.explanation ?? "")
+      })
+    }
+  }
+
+  if (valid.length === 0) {
+    throw new Error("Gemini returned no valid questions")
+  }
+
+  return valid
+}
