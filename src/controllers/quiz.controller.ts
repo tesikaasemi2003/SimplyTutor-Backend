@@ -6,6 +6,7 @@ import { IQuiz, QuizModel } from "../models/quiz.model"
 import { QuizAttemptModel } from "../models/quizAttempt.model"
 import { ExplanationModel } from "../models/explanation.model"
 import { generateQuiz } from "../services/gemini.service"
+import { touchStreak } from "../utils/streak"
 
 // never send correctIndex / explanation before the learner answers
 const toPublicQuiz = (quiz: IQuiz) => ({
@@ -128,6 +129,8 @@ export const submitAttempt = async (req: AuthRequest, res: Response) => {
       total,
       percentage
     })
+
+    await touchStreak(req.user?.sub)
 
     // correct answers are revealed only now
     const review = quiz.questions.map((q, i) => ({

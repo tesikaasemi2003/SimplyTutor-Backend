@@ -4,6 +4,7 @@ import { AuthRequest } from "../middlewares/auth"
 import { TopicModel } from "../models/topic.model"
 import { ExplanationModel } from "../models/explanation.model"
 import { evaluateExplanation } from "../services/gemini.service"
+import { touchStreak } from "../utils/streak"
 
 export const submitExplanation = async (req: AuthRequest, res: Response) => {
   try {
@@ -48,6 +49,8 @@ export const submitExplanation = async (req: AuthRequest, res: Response) => {
       text: text.trim(),
       feedback
     })
+
+    await touchStreak(req.user?.sub)
 
     res.status(201).json({ message: "Evaluated..!", data: explanation })
   } catch (err) {
