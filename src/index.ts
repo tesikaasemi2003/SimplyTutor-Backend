@@ -9,6 +9,7 @@ import authRouter from "./routes/auth.routes"
 import topicRouter from "./routes/topic.routes"
 import explanationRouter from "./routes/explanation.routes"
 import quizRouter from "./routes/quiz.routes"
+import dashboardRouter from "./routes/dashboard.routes"
 
 const PORT = process.env.PORT || 5000
 const MONGO_URL = process.env.MONGO_URL || ""
@@ -26,6 +27,7 @@ app.use("/api/v1/auth", authRouter)
 app.use("/api/v1/topics", topicRouter)
 app.use("/api/v1/explanations", explanationRouter)
 app.use("/api/v1/quizzes", quizRouter)
+app.use("/api/v1/dashboard", dashboardRouter)
 
 mongoose
   .connect(MONGO_URL)
