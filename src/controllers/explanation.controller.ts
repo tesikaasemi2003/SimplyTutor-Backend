@@ -61,7 +61,15 @@ export const submitExplanation = async (req: AuthRequest, res: Response) => {
 
 export const getMyExplanations = async (req: AuthRequest, res: Response) => {
   try {
-    const explanations = await ExplanationModel.find({ user: req.user?.sub })
+    const filter: Record<string, unknown> = { user: req.user?.sub }
+
+    // optional: /explanations/me?topic=<topicId>
+    const topicId = req.query.topic
+    if (typeof topicId === "string" && isValidObjectId(topicId)) {
+      filter.topic = topicId
+    }
+
+    const explanations = await ExplanationModel.find(filter)
       .populate("topic", "title category")
       .sort({ createdAt: -1 })
 
