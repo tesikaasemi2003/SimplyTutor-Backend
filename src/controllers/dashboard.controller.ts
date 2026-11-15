@@ -134,7 +134,7 @@ export const getMyDashboard = async (req: AuthRequest, res: Response) => {
             $dateToString: {
               format: "%Y-%m-%d",
               date: "$createdAt",
-              timeZone: APP_TZ
+              timezone: APP_TZ
             }
           },
           count: { $sum: 1 }
