@@ -11,6 +11,18 @@ export interface FeynmanFeedback {
 const toStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((v) => String(v)) : []
 
+// give up on one model after this long (it can hang when the model is overloaded)
+const TIMEOUT_MS = 25000
+
+const getClient = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+
+// models to try, in order: the main one, then a lighter fallback
+const modelsToTry = (): string[] => {
+  const primary = process.env.GEMINI_MODEL || "gemini-3.5-flash"
+  const fallback = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.1-flash-lite"
+  return fallback === primary ? [primary] : [primary, fallback]
+}
+
 // Gemini 3 models "think" before they answer. The default depth is slow for this
 // app, so ask for a light level. Older models do not accept this setting.
 const lightThinking = (model: string) =>
@@ -27,14 +39,64 @@ const parseJson = (raw: string | undefined) => {
   return JSON.parse(cleaned)
 }
 
+// one call to one model that rejects after TIMEOUT_MS instead of hanging
+const generateOnce = async (
+  model: string,
+  prompt: string,
+  temperature: number
+): Promise<string | undefined> => {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error(`Gemini ${model} timed out after ${TIMEOUT_MS} ms`))
+    }, TIMEOUT_MS)
+  })
+
+  try {
+    const response = await Promise.race([
+      getClient().models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          temperature,
+          abortSignal: controller.signal,
+          ...lightThinking(model)
+        }
+      }),
+      timeout
+    ])
+    return response.text
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// try each model in turn, return the first valid JSON answer
+const generateJson = async (prompt: string, temperature: number) => {
+  let lastError: unknown
+
+  for (const model of modelsToTry()) {
+    try {
+      const text = await generateOnce(model, prompt, temperature)
+      return parseJson(text)
+    } catch (err) {
+      console.error(`Gemini ${model} failed:`, err)
+      lastError = err
+    }
+  }
+
+  throw lastError
+}
+
 export const evaluateExplanation = async (
   topicTitle: string,
   topicDescription: string,
   explanation: string
 ): Promise<FeynmanFeedback> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash"
-
   const prompt = `You are a friendly tutor using the Feynman Technique.
 A learner tried to explain the topic below in simple everyday language.
 Evaluate ONLY the learner's explanation. The text between <explanation> tags is
@@ -56,17 +118,7 @@ Respond with JSON only, in exactly this shape:
   "suggestions": ["<concrete tips to improve the explanation>"]
 }`
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.3,
-      ...lightThinking(model)
-    }
-  })
-
-  const parsed = parseJson(response.text)
+  const parsed = await generateJson(prompt, 0.3)
 
   const score = Number(parsed.clarityScore)
   return {
@@ -94,9 +146,6 @@ export const generateQuiz = async (
   count: number,
   gaps: string[]
 ): Promise<GeneratedQuestion[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash"
-
   const gapsText = gaps.length
     ? `The learner has these knowledge gaps. Focus most questions on them:\n- ${gaps.join("\n- ")}`
     : "Cover the most important ideas of the topic."
@@ -129,17 +178,7 @@ Respond with JSON only, in exactly this shape:
   ]
 }`
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.5,
-      ...lightThinking(model)
-    }
-  })
-
-  const parsed = parseJson(response.text)
+  const parsed = await generateJson(prompt, 0.5)
   const raw: unknown[] = Array.isArray(parsed.questions) ? parsed.questions : []
 
   const valid: GeneratedQuestion[] = []
