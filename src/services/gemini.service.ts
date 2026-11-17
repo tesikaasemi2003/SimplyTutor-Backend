@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai"
+import { GoogleGenAI, ThinkingLevel } from "@google/genai"
 
 export interface FeynmanFeedback {
   clarityScore: number
@@ -10,6 +10,22 @@ export interface FeynmanFeedback {
 
 const toStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((v) => String(v)) : []
+
+// Gemini 3 models "think" before they answer. The default depth is slow for this
+// app, so ask for a light level. Older models do not accept this setting.
+const lightThinking = (model: string) =>
+  model.startsWith("gemini-3")
+    ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+    : {}
+
+// some models wrap JSON in a ```json fence even when asked for plain JSON
+const parseJson = (raw: string | undefined) => {
+  const cleaned = (raw ?? "{}")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim()
+  return JSON.parse(cleaned)
+}
 
 export const evaluateExplanation = async (
   topicTitle: string,
@@ -43,10 +59,14 @@ Respond with JSON only, in exactly this shape:
   const response = await ai.models.generateContent({
     model,
     contents: prompt,
-    config: { responseMimeType: "application/json", temperature: 0.3 }
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.3,
+      ...lightThinking(model)
+    }
   })
 
-  const parsed = JSON.parse(response.text ?? "{}")
+  const parsed = parseJson(response.text)
 
   const score = Number(parsed.clarityScore)
   return {
@@ -112,10 +132,14 @@ Respond with JSON only, in exactly this shape:
   const response = await ai.models.generateContent({
     model,
     contents: prompt,
-    config: { responseMimeType: "application/json", temperature: 0.5 }
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.5,
+      ...lightThinking(model)
+    }
   })
 
-  const parsed = JSON.parse(response.text ?? "{}")
+  const parsed = parseJson(response.text)
   const raw: unknown[] = Array.isArray(parsed.questions) ? parsed.questions : []
 
   const valid: GeneratedQuestion[] = []
