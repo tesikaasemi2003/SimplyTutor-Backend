@@ -7,6 +7,7 @@ import { QuizAttemptModel } from "../models/quizAttempt.model"
 import { ExplanationModel } from "../models/explanation.model"
 import { generateQuiz } from "../services/gemini.service"
 import { touchStreak } from "../utils/streak"
+import { canAccessTopic } from "../utils/topicAccess"
 
 // never send correctIndex / explanation before the learner answers
 const toPublicQuiz = (quiz: IQuiz) => ({
@@ -18,6 +19,15 @@ const toPublicQuiz = (quiz: IQuiz) => ({
     options: q.options
   }))
 })
+
+// a quiz of a private topic may only be used by the topic's owner.
+// (if the topic was deleted there is nothing left to protect)
+const canUseQuiz = async (quiz: IQuiz, userId?: string): Promise<boolean> => {
+  const topic = await TopicModel.findById(quiz.topic).select(
+    "visibility createdBy"
+  )
+  return !topic || canAccessTopic(topic, userId)
+}
 
 export const generateQuizForTopic = async (req: AuthRequest, res: Response) => {
   try {
@@ -32,7 +42,7 @@ export const generateQuizForTopic = async (req: AuthRequest, res: Response) => {
       : 5
 
     const topic = await TopicModel.findById(topicId)
-    if (!topic) {
+    if (!topic || !canAccessTopic(topic, req.user?.sub)) {
       return res.status(404).json({ message: "Topic not found..!" })
     }
 
@@ -79,7 +89,7 @@ export const getQuiz = async (req: AuthRequest, res: Response) => {
     }
 
     const quiz = await QuizModel.findById(id)
-    if (!quiz) {
+    if (!quiz || !(await canUseQuiz(quiz, req.user?.sub))) {
       return res.status(404).json({ message: "Quiz not found..!" })
     }
 
@@ -98,7 +108,7 @@ export const submitAttempt = async (req: AuthRequest, res: Response) => {
     }
 
     const quiz = await QuizModel.findById(id)
-    if (!quiz) {
+    if (!quiz || !(await canUseQuiz(quiz, req.user?.sub))) {
       return res.status(404).json({ message: "Quiz not found..!" })
     }
 

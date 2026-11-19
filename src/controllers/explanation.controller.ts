@@ -5,6 +5,7 @@ import { TopicModel } from "../models/topic.model"
 import { ExplanationModel } from "../models/explanation.model"
 import { evaluateExplanation } from "../services/gemini.service"
 import { touchStreak } from "../utils/streak"
+import { canAccessTopic } from "../utils/topicAccess"
 
 export const submitExplanation = async (req: AuthRequest, res: Response) => {
   try {
@@ -25,7 +26,8 @@ export const submitExplanation = async (req: AuthRequest, res: Response) => {
     }
 
     const topic = await TopicModel.findById(topicId)
-    if (!topic) {
+    // someone else's private topic looks the same as a missing one
+    if (!topic || !canAccessTopic(topic, req.user?.sub)) {
       return res.status(404).json({ message: "Topic not found..!" })
     }
 
